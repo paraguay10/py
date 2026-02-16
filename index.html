@@ -3,24 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <title>Contato</title>
+
+<!-- EmailJS CDN -->
 <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
-<script>
-(function(){
-  emailjs.init("SUA_PUBLIC_KEY"); // não é segredo
-})();
-</script>
 
 <style>
 body {
-  font-family: Arial;
+  font-family: Arial, sans-serif;
   background: #020617;
   color: #e5e7eb;
   padding: 20px;
 }
+
+h2 {
+  color: #38bdf8;
+}
+
 input, textarea, button {
   width: 100%;
-  margin: 6px 0;
   padding: 10px;
+  margin-top: 10px;
+  background: #020617;
+  color: #e5e7eb;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+}
+
+button {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#status {
+  margin-top: 15px;
+  font-weight: bold;
 }
 </style>
 </head>
@@ -29,22 +45,49 @@ input, textarea, button {
 
 <h2>Enviar mensagem</h2>
 
-<input id="nome" placeholder="Seu nome">
-<input id="email" placeholder="Seu e-mail">
-<textarea id="msg" placeholder="Mensagem"></textarea>
+<form id="form">
+  <input type="text" name="name" placeholder="Seu nome" required>
+  <input type="email" name="email" placeholder="Seu email" required>
+  <textarea name="message" rows="5" placeholder="Sua mensagem" required></textarea>
+  <button type="submit">Enviar</button>
+</form>
 
-<button onclick="enviar()">Enviar</button>
+<div id="status"></div>
 
 <script>
-function enviar() {
-  emailjs.send("SERVICE_ID", "TEMPLATE_ID", {
-    nome: nome.value,
-    email: email.value,
-    mensagem: msg.value
+/* =============================
+   CONFIGURAÇÃO EMAILJS
+   ============================= */
+
+// 🔴 TROQUE SOMENTE ISSO
+emailjs.init("T9VhOTKyPdZJjjO7E");
+
+/* =============================
+   ENVIO DO FORMULÁRIO
+   ============================= */
+
+const form = document.getElementById("form");
+const status = document.getElementById("status");
+
+form.addEventListener("submit", function(event) {
+  event.preventDefault();
+
+  status.textContent = "Enviando...";
+
+  emailjs.sendForm(
+    "service_z6sug47",     // Service ID
+    "template_5fbrhhc",    // Template ID
+    this
+  )
+  .then(() => {
+    status.textContent = "✅ Mensagem enviada com sucesso!";
+    form.reset();
   })
-  .then(() => alert("Mensagem enviada!"))
-  .catch(() => alert("Erro ao enviar"));
-}
+  .catch((error) => {
+    status.textContent = "❌ Erro ao enviar mensagem";
+    console.error("EmailJS error:", error);
+  });
+});
 </script>
 
 </body>
