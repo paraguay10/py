@@ -2,103 +2,48 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Contato por Email</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contato</title>
+<script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
+<script>
+(function(){
+  emailjs.init("SUA_PUBLIC_KEY"); // não é segredo
+})();
+</script>
 
 <style>
 body {
-  font-family: Arial, sans-serif;
-  background: #0f172a;
-  color: #e5e7eb;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-}
-
-.container {
+  font-family: Arial;
   background: #020617;
+  color: #e5e7eb;
   padding: 20px;
-  border-radius: 10px;
-  width: 100%;
-  max-width: 400px;
-  box-shadow: 0 0 20px #000;
 }
-
-h2 {
-  text-align: center;
-  margin-bottom: 15px;
-}
-
-input, textarea {
+input, textarea, button {
   width: 100%;
+  margin: 6px 0;
   padding: 10px;
-  margin-top: 8px;
-  border-radius: 5px;
-  border: none;
-  font-size: 14px;
-}
-
-textarea {
-  resize: none;
-}
-
-button {
-  width: 100%;
-  margin-top: 12px;
-  padding: 12px;
-  background: #22c55e;
-  color: #022c22;
-  font-weight: bold;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #16a34a;
 }
 </style>
 </head>
 
 <body>
 
-<div class="container">
-  <h2>📧 Enviar Email</h2>
+<h2>Enviar mensagem</h2>
 
-  <input id="nome" placeholder="Seu nome">
-  <input id="email" placeholder="Seu email">
-  <input id="assunto" placeholder="Assunto">
-  <textarea id="mensagem" rows="5" placeholder="Mensagem"></textarea>
+<input id="nome" placeholder="Seu nome">
+<input id="email" placeholder="Seu e-mail">
+<textarea id="msg" placeholder="Mensagem"></textarea>
 
-  <button onclick="enviarEmail()">Enviar</button>
-</div>
+<button onclick="enviar()">Enviar</button>
 
 <script>
-function enviarEmail() {
-  const nome = document.getElementById("nome").value;
-  const email = document.getElementById("email").value;
-  const assunto = document.getElementById("assunto").value;
-  const mensagem = document.getElementById("mensagem").value;
-
-  if (!nome || !email || !assunto || !mensagem) {
-    alert("Preencha todos os campos.");
-    return;
-  }
-
-  const destino = "ghithubsh@outlook.com"; // 👈 TROQUE AQUI
-
-  const corpo =
-    "Nome: " + nome + "%0D%0A" +
-    "Email: " + email + "%0D%0A%0D%0A" +
-    mensagem;
-
-  const link =
-    "mailto:" + destino +
-    "?subject=" + encodeURIComponent(assunto) +
-    "&body=" + corpo;
-
-  window.location.href = link;
+function enviar() {
+  emailjs.send("SERVICE_ID", "TEMPLATE_ID", {
+    nome: nome.value,
+    email: email.value,
+    mensagem: msg.value
+  })
+  .then(() => alert("Mensagem enviada!"))
+  .catch(() => alert("Erro ao enviar"));
 }
 </script>
 
