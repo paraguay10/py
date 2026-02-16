@@ -9,9 +9,9 @@ body { font-family: Arial; background: #020617; color:#e5e7eb; padding:20px; }
 h2 { color:#38bdf8; }
 pre { background:#020617; border:1px solid #1e293b; padding:16px; border-radius:6px; font-size:14px; white-space:pre-wrap; }
 input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px; width:100%; margin-bottom:8px; }
+button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6px; cursor:pointer; font-weight:bold; margin-bottom:8px; }
 .stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
-.match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; }
-.match.saldo { color:red; }
+.match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; white-space:pre-wrap; }
 .card { border:1px solid #1e293b; padding:10px; border-radius:6px; margin-bottom:10px; background:#0a0f1c; font-size:13px; }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
 </style>
@@ -23,17 +23,18 @@ input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px
 </head>
 <body>
 
-<h2>Gerador Bitcoin REAL Rápido</h2>
-<p>secp256k1 • P2PKH/P2SH/P2WPKH • Testnet • Máxima velocidade</p>
+<h2>Gerador BTC</h2>
 
 <label>🔽 Limite inferior (HEX)</label>
-<input id="minHex" value="1">
+<input id="minHex" value="600000000000000000">
 
 <label>🔼 Limite superior (HEX)</label>
-<input id="maxHex" value="7ff">
+<input id="maxHex" value="7ffffffffffffffffff">
 
 <input type="file" id="file" accept=".txt">
 <p id="count">📄 Endereços carregados: 0</p>
+
+<button id="emailTeste">📧 Enviar Email Teste</button>
 
 <div class="stats" id="stats">
 Gerados: 0<br>
@@ -51,17 +52,15 @@ import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
 import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 
 /* ========= CONFIGURAÇÃO ========= */
-const ENDERECO_FIXO = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU";
-const TOTAL_SUBRANGES = 8; // mais sub-ranges = mais paralelismo
-
-let MIN_HEX, MAX_HEX; 
+const TOTAL_SUBRANGES = 10000;
+let MIN_HEX, MAX_HEX;
 function atualizarRange(){
   MIN_HEX = BigInt("0x"+document.getElementById("minHex").value.trim());
   MAX_HEX = BigInt("0x"+document.getElementById("maxHex").value.trim());
 }
 
 /* ========= BASE58 ========= */
-const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58(buf){
   let zeros=0;
   while(zeros<buf.length && buf[zeros]===0) zeros++;
@@ -85,24 +84,28 @@ function randomBigInt(min,max){
 
 /* ========= SUB-RANGES ========= */
 atualizarRange();
-let RANGE_SIZE = MAX_HEX-MIN_HEX+1n;
+let RANGE_SIZE = MAX_HEX - MIN_HEX + 1n;
 let SUB_SIZE = RANGE_SIZE/BigInt(TOTAL_SUBRANGES);
-const subs=[];
+const subs = [];
 const grid = document.getElementById("grid");
 
 for(let i=0;i<TOTAL_SUBRANGES;i++){
-  const min=MIN_HEX+SUB_SIZE*BigInt(i);
-  const max=(i===TOTAL_SUBRANGES-1)?MAX_HEX:min+SUB_SIZE-1n;
-  const card=document.createElement("div");
+  const min = MIN_HEX + SUB_SIZE*BigInt(i);
+  const max = (i===TOTAL_SUBRANGES-1) ? MAX_HEX : min + SUB_SIZE - 1n;
+  const card = document.createElement("div");
   card.className="card";
-  card.innerHTML=`<b>Sub-range ${i+1}/${TOTAL_SUBRANGES}</b><br>
+  card.innerHTML = `<b>Sub-range ${i+1}/${TOTAL_SUBRANGES}</b><br>
 HEX:<br>${min.toString(16)}<br>→<br>${max.toString(16)}<br><br>
 Gerados: <span class="g">0</span><br>
 Velocidade: <span class="v">0</span> addr/s<br>
 Última chave:<br>
 <small class="l">---</small>`;
   grid.appendChild(card);
-  subs.push({min,max,total:0,lastTime:performance.now(),lastTotal:0,g:card.querySelector(".g"),v:card.querySelector(".v"),l:card.querySelector(".l"),card});
+  subs.push({
+    min,max,total:0,lastTime:performance.now(),lastTotal:0,
+    g:card.querySelector(".g"),v:card.querySelector(".v"),
+    l:card.querySelector(".l"),card
+  });
 }
 
 /* ========= GERAR ENDEREÇO ========= */
@@ -113,45 +116,26 @@ function gerar(sub){
   const pub = getPublicKey(priv,true);
   const hash160 = ripemd160(sha256(pub));
 
-  // Mainnet P2PKH
   const payloadP2PKH = new Uint8Array([0x00,...hash160]);
   const checksumP2PKH = sha256(sha256(payloadP2PKH)).slice(0,4);
   const addressP2PKH = base58(new Uint8Array([...payloadP2PKH,...checksumP2PKH]));
 
-  // Mainnet P2SH
-  const payloadP2SH = new Uint8Array([0x05,...hash160]);
-  const checksumP2SH = sha256(sha256(payloadP2SH)).slice(0,4);
-  const addressP2SH = base58(new Uint8Array([...payloadP2SH,...checksumP2SH]));
+  return { privHex, addressP2PKH };
+}
 
-  // Mainnet P2WPKH
-  const payloadP2WPKH = new Uint8Array([0x00,...hash160]);
-  const checksumP2WPKH = sha256(sha256(payloadP2WPKH)).slice(0,4);
-  const addressP2WPKH = base58(new Uint8Array([...payloadP2WPKH,...checksumP2WPKH]));
-
-  // Testnet P2PKH
-  const payloadTestnetP2PKH = new Uint8Array([0x6F,...hash160]);
-  const checksumTestnetP2PKH = sha256(sha256(payloadTestnetP2PKH)).slice(0,4);
-  const addressTestnetP2PKH = base58(new Uint8Array([...payloadTestnetP2PKH,...checksumTestnetP2PKH]));
-
-  // Testnet P2SH
-  const payloadTestnetP2SH = new Uint8Array([0xC4,...hash160]);
-  const checksumTestnetP2SH = sha256(sha256(payloadTestnetP2SH)).slice(0,4);
-  const addressTestnetP2SH = base58(new Uint8Array([...payloadTestnetP2SH,...checksumTestnetP2SH]));
-
-  // Testnet P2WPKH
-  const payloadTestnetP2WPKH = new Uint8Array([0x00,...hash160]);
-  const checksumTestnetP2WPKH = sha256(sha256(payloadTestnetP2WPKH)).slice(0,4);
-  const addressTestnetP2WPKH = base58(new Uint8Array([...payloadTestnetP2WPKH,...checksumTestnetP2WPKH]));
-
-  return {
-    privHex,
-    addressP2PKH,
-    addressP2SH,
-    addressP2WPKH,
-    addressTestnetP2PKH,
-    addressTestnetP2SH,
-    addressTestnetP2WPKH
-  };
+/* ========= SALDO API ========= */
+async function consultarSaldo(address) {
+  try {
+    const res = await fetch(`https://blockstream.info/api/address/${address}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const funded = data.chain_stats.funded_txo_sum + data.mempool_stats.funded_txo_sum;
+    const spent = data.chain_stats.spent_txo_sum + data.mempool_stats.spent_txo_sum;
+    const sat = funded - spent;
+    return sat/1e8; // em BTC
+  } catch {
+    return null;
+  }
 }
 
 /* ========= ENDEREÇOS ========= */
@@ -163,25 +147,29 @@ file.addEventListener("change", async e=>{
 });
 
 /* ========= EMAIL MATCH ========= */
-function enviarEmailMatch(priv,addr){
-  const content=`🚨 MATCH ENCONTRADO
+async function enviarEmailMatch(priv,addr){
+  const saldo = await consultarSaldo(addr);
+  const content = `
+🚨 MATCH ENCONTRADO
 
 PRIVATE_KEY=${priv}
-ADDRESS=${addr}`;
+ADDRESS=${addr}
+SALDO=${saldo !== null ? saldo + " BTC" : "erro"}
+`;
+
   emailjs.send("service_z6sug47","template_5fbrhhc",{name:"Sistema Automático",email:"match@sistema.com",message:content})
-  .then(()=>console.log("Email enviado com sucesso!"))
-  .catch(err=>console.error("Erro ao enviar email:",err));
+    .then(()=>console.log("Email enviado com sucesso!"))
+    .catch(err=>console.error("Erro ao enviar email:",err));
 }
 
 /* ========= MATCHES ========= */
 const matchesOut = document.getElementById("matches");
 let totalMatches = 0;
-
 async function registrarMatch(priv,addr){
   totalMatches++;
   const div = document.createElement("div");
   div.className = "match";
-  div.textContent=`PRIVATE_KEY=${priv}\nADDRESS=${addr}`;
+  div.textContent = `PRIVATE_KEY=${priv}\nADDRESS=${addr}`;
   matchesOut.appendChild(div);
   enviarEmailMatch(priv,addr);
 }
@@ -189,8 +177,8 @@ async function registrarMatch(priv,addr){
 /* ========= LOOP PRINCIPAL ========= */
 let totalGerados = 0;
 function loop(){
-  atualizarRange(); // Atualiza o intervalo antes de gerar
-  RANGE_SIZE = MAX_HEX-MIN_HEX+1n;
+  atualizarRange();
+  RANGE_SIZE = MAX_HEX - MIN_HEX + 1n;
   SUB_SIZE = RANGE_SIZE/BigInt(TOTAL_SUBRANGES);
 
   for(const sub of subs){
@@ -200,23 +188,16 @@ function loop(){
     sub.l.textContent = r.privHex;
     totalGerados++;
 
-    // Verifica todos os tipos de endereços
     if(enderecos.has(r.addressP2PKH)) registrarMatch(r.privHex,r.addressP2PKH);
-    if(enderecos.has(r.addressP2SH)) registrarMatch(r.privHex,r.addressP2SH);
-    if(enderecos.has(r.addressP2WPKH)) registrarMatch(r.privHex,r.addressP2WPKH);
-    if(enderecos.has(r.addressTestnetP2PKH)) registrarMatch(r.privHex,r.addressTestnetP2PKH);
-    if(enderecos.has(r.addressTestnetP2SH)) registrarMatch(r.privHex,r.addressTestnetP2SH);
-    if(enderecos.has(r.addressTestnetP2WPKH)) registrarMatch(r.privHex,r.addressTestnetP2WPKH);
   }
 
-  // Atualiza estatísticas
   const now = performance.now();
   for(const sub of subs){
-    const delta = (now-sub.lastTime)/1000;
+    const delta=(now-sub.lastTime)/1000;
     if(delta>=1){
-      sub.v.textContent = Math.floor((sub.total-sub.lastTotal)/delta);
-      sub.lastTotal = sub.total;
-      sub.lastTime = now;
+      sub.v.textContent=Math.floor((sub.total-sub.lastTotal)/delta);
+      sub.lastTotal=sub.total;
+      sub.lastTime=now;
     }
   }
   stats.innerHTML = `Gerados: ${totalGerados}<br>Matches: ${totalMatches}<br>Velocidade: ${subs.reduce((a,b)=>a+b.v.textContent*1,0)} addr/s`;
@@ -225,6 +206,24 @@ function loop(){
 }
 
 loop();
+
+/* ========= BOTÃO TESTE EMAIL ========= */
+document.getElementById("emailTeste").addEventListener("click", async ()=>{
+  const sub = subs[Math.floor(Math.random()*subs.length)];
+  const r = gerar(sub);
+  const saldo = await consultarSaldo(r.addressP2PKH);
+
+  const content = `
+📧 TESTE DE EMAIL
+
+PRIVATE_KEY=${r.privHex}
+ADDRESS=${r.addressP2PKH}
+SALDO=${saldo !== null ? saldo + " BTC" : "erro"}
+`;
+  emailjs.send("service_z6sug47","template_5fbrhhc",{name:"Teste Manual",email:"match@sistema.com",message:content})
+    .then(()=>alert("Email teste enviado!"))
+    .catch(err=>alert("Erro ao enviar teste:"+err));
+});
 </script>
 </body>
 </html>
