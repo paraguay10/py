@@ -72,9 +72,17 @@ import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
 import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
 import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 
-/* ========= CONFIGURAÇÃO ========= */
+/* ========= ELEMENTOS ========= */
+const out = document.getElementById("out");
+const stats = document.getElementById("stats");
+const matches = document.getElementById("matches");
+const toggle = document.getElementById("toggle");
+const fixoAddr = document.getElementById("fixoAddr");
+const fixoSaldo = document.getElementById("fixoSaldo");
 
-// RANGE 70–71 bits (HEX)
+/* ========= CONFIG ========= */
+
+// RANGE 70–71 bits
 const RANGE_MIN = BigInt("0x400000000000000000"); // 2^70
 const RANGE_MAX = BigInt("0x7fffffffffffffffff"); // 2^71 - 1
 
@@ -84,35 +92,39 @@ fixoAddr.textContent = ENDERECO_MATCH;
 
 /* ========= BASE58 ========= */
 const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
 function base58(buf) {
   let zeros = 0;
   while (zeros < buf.length && buf[zeros] === 0) zeros++;
+
   let num = BigInt("0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join(""));
   let out = "";
+
   while (num > 0n) {
     out = ALPHABET[num % 58n] + out;
     num /= 58n;
   }
+
   return "1".repeat(zeros) + out;
 }
 
-/* ========= RANDOM BIGINT NO RANGE ========= */
+/* ========= RANDOM BIGINT ========= */
 function randomBigInt(min, max) {
   const range = max - min;
   const bytes = Math.ceil(range.toString(2).length / 8);
+
   let rnd;
   do {
     const buf = crypto.getRandomValues(new Uint8Array(bytes));
     rnd = BigInt("0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join(""));
   } while (rnd > range);
+
   return min + rnd;
 }
 
-/* ========= GERAR PRIVATE KEY ========= */
+/* ========= GERAR CHAVE ========= */
 function gerar() {
   const privBig = randomBigInt(RANGE_MIN, RANGE_MAX);
-
-  // completa para 32 bytes (64 hex)
   const privHex = privBig.toString(16).padStart(64, "0");
 
   const priv = Uint8Array.from(
@@ -153,6 +165,7 @@ setInterval(atualizarSaldo, 900000);
 
 /* ========= MATCH ========= */
 let totalMatches = 0;
+
 async function registrarMatch(priv, addr) {
   totalMatches++;
   const sat = await consultarSaldo(addr);
@@ -171,6 +184,7 @@ SALDO       = ${btc} BTC
 
 /* ========= CONTROLE ========= */
 let running = true;
+
 toggle.onclick = () => {
   running = !running;
   toggle.textContent = running ? "⏸ Pausar" : "▶ Continuar";
@@ -214,6 +228,7 @@ Velocidade: ${speed} addr/s
 
   lastTime = now;
   lastCount = totalGerados;
+
   requestAnimationFrame(loop);
 }
 
