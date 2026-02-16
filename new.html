@@ -5,9 +5,8 @@
 <title>Gerador BTC Rápido</title>
 
 <style>
-body { font-family: Arial; background: #020617; color:#e5e7eb; padding:20px; }
+body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
 h2 { color:#38bdf8; }
-pre { background:#020617; border:1px solid #1e293b; padding:16px; border-radius:6px; font-size:14px; white-space:pre-wrap; }
 input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px; width:100%; margin-bottom:8px; }
 button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6px; cursor:pointer; font-weight:bold; margin-bottom:8px; }
 .stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
@@ -16,7 +15,6 @@ button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6p
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
 </style>
 
-<!-- EmailJS -->
 <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
 <script>emailjs.init("T9VhOTKyPdZJjjO7E");</script>
 
@@ -42,7 +40,6 @@ Matches: 0<br>
 Velocidade: 0 addr/s
 </div>
 
-<pre id="out">Iniciando…</pre>
 <div id="matches">🎯 MATCHES:</div>
 <div id="grid" class="grid"></div>
 
@@ -51,26 +48,27 @@ import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
 import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
 import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 
-/* ========= CONFIGURAÇÃO ========= */
-const TOTAL_SUBRANGES = 10000;
+/* CONFIG */
+const TOTAL_SUBRANGES = 1000;
 let MIN_HEX, MAX_HEX;
+
 function atualizarRange(){
   MIN_HEX = BigInt("0x"+document.getElementById("minHex").value.trim());
   MAX_HEX = BigInt("0x"+document.getElementById("maxHex").value.trim());
 }
 
-/* ========= BASE58 ========= */
+/* BASE58 */
 const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58(buf){
   let zeros=0;
   while(zeros<buf.length && buf[zeros]===0) zeros++;
-  let num = BigInt("0x"+[...buf].map(b=>b.toString(16).padStart(2,"0")).join(""));
+  let num=BigInt("0x"+[...buf].map(b=>b.toString(16).padStart(2,"0")).join(""));
   let out="";
   while(num>0n){ out=ALPHABET[num%58n]+out; num/=58n; }
   return "1".repeat(zeros)+out;
 }
 
-/* ========= RANDOM BIGINT ========= */
+/* RANDOM */
 function randomBigInt(min,max){
   const range=max-min;
   const bytes=Math.ceil(range.toString(2).length/8);
@@ -82,116 +80,116 @@ function randomBigInt(min,max){
   return min+rnd;
 }
 
-/* ========= SUB-RANGES ========= */
+/* SUBRANGES */
 atualizarRange();
 let RANGE_SIZE = MAX_HEX - MIN_HEX + 1n;
 let SUB_SIZE = RANGE_SIZE/BigInt(TOTAL_SUBRANGES);
-const subs = [];
-const grid = document.getElementById("grid");
+const subs=[];
+const grid=document.getElementById("grid");
 
 for(let i=0;i<TOTAL_SUBRANGES;i++){
-  const min = MIN_HEX + SUB_SIZE*BigInt(i);
-  const max = (i===TOTAL_SUBRANGES-1) ? MAX_HEX : min + SUB_SIZE - 1n;
-  const card = document.createElement("div");
+  const min=MIN_HEX+SUB_SIZE*BigInt(i);
+  const max=(i===TOTAL_SUBRANGES-1)?MAX_HEX:min+SUB_SIZE-1n;
+  const card=document.createElement("div");
   card.className="card";
-  card.innerHTML = `<b>Sub-range ${i+1}/${TOTAL_SUBRANGES}</b><br>
+  card.innerHTML=`<b>Sub-range ${i+1}/${TOTAL_SUBRANGES}</b><br>
 HEX:<br>${min.toString(16)}<br>→<br>${max.toString(16)}<br><br>
 Gerados: <span class="g">0</span><br>
 Velocidade: <span class="v">0</span> addr/s<br>
 Última chave:<br>
 <small class="l">---</small>`;
   grid.appendChild(card);
-  subs.push({
-    min,max,total:0,lastTime:performance.now(),lastTotal:0,
-    g:card.querySelector(".g"),v:card.querySelector(".v"),
-    l:card.querySelector(".l"),card
-  });
+  subs.push({min,max,total:0,lastTime:performance.now(),lastTotal:0,g:card.querySelector(".g"),v:card.querySelector(".v"),l:card.querySelector(".l")});
 }
 
-/* ========= GERAR ENDEREÇO ========= */
+/* GERAR ENDEREÇOS */
 function gerar(sub){
-  const privBig = randomBigInt(sub.min, sub.max);
-  const privHex = privBig.toString(16).padStart(64,"0");
-  const priv = Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
-  const pub = getPublicKey(priv,true);
-  const hash160 = ripemd160(sha256(pub));
+  const privBig=randomBigInt(sub.min,sub.max);
+  const privHex=privBig.toString(16).padStart(64,"0");
+  const priv=Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
+  const pub=getPublicKey(priv,true);
+  const hash160=ripemd160(sha256(pub));
 
-  const payloadP2PKH = new Uint8Array([0x00,...hash160]);
-  const checksumP2PKH = sha256(sha256(payloadP2PKH)).slice(0,4);
-  const addressP2PKH = base58(new Uint8Array([...payloadP2PKH,...checksumP2PKH]));
+  function gerarAddr(prefix){
+    const payload=new Uint8Array([prefix,...hash160]);
+    const checksum=sha256(sha256(payload)).slice(0,4);
+    return base58(new Uint8Array([...payload,...checksum]));
+  }
 
-  return { privHex, addressP2PKH };
+  return {
+    privHex,
+    P2PKH: gerarAddr(0x00),
+    P2SH: gerarAddr(0x05),
+    P2WPKH: gerarAddr(0x00),
+    TestnetP2PKH: gerarAddr(0x6F),
+    TestnetP2SH: gerarAddr(0xC4),
+    TestnetP2WPKH: gerarAddr(0x00)
+  };
 }
 
-/* ========= SALDO API ========= */
-async function consultarSaldo(address) {
-  try {
-    const res = await fetch(`https://blockstream.info/api/address/${address}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const funded = data.chain_stats.funded_txo_sum + data.mempool_stats.funded_txo_sum;
-    const spent = data.chain_stats.spent_txo_sum + data.mempool_stats.spent_txo_sum;
-    const sat = funded - spent;
-    return sat/1e8; // em BTC
-  } catch {
+/* SALDO API */
+async function consultarSaldo(address){
+  try{
+    const res=await fetch(`https://blockstream.info/api/address/${address}`);
+    if(!res.ok) return null;
+    const data=await res.json();
+    const funded=data.chain_stats.funded_txo_sum + data.mempool_stats.funded_txo_sum;
+    const spent=data.chain_stats.spent_txo_sum + data.mempool_stats.spent_txo_sum;
+    return (funded-spent)/1e8;
+  }catch{
     return null;
   }
 }
 
-/* ========= ENDEREÇOS ========= */
-const enderecos = new Set();
-file.addEventListener("change", async e=>{
-  const text = await e.target.files[0].text();
-  text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l).forEach(l=>enderecos.add(l));
-  count.textContent = `📄 Endereços carregados: ${enderecos.size}`;
-});
+/* EMAIL */
+async function enviarEmailCompleto(dados,tipo="TESTE"){
+  const saldo=await consultarSaldo(dados.P2PKH);
 
-/* ========= EMAIL MATCH ========= */
-async function enviarEmailMatch(priv,addr){
-  const saldo = await consultarSaldo(addr);
-  const content = `
-🚨 MATCH ENCONTRADO
+  const content=`
+${tipo}
 
-PRIVATE_KEY=${priv}
-ADDRESS=${addr}
-SALDO=${saldo !== null ? saldo + " BTC" : "erro"}
+PRIVATE_KEY:
+${dados.privHex}
+
+MAINNET:
+P2PKH: ${dados.P2PKH}
+P2SH: ${dados.P2SH}
+P2WPKH: ${dados.P2WPKH}
+
+TESTNET:
+P2PKH: ${dados.TestnetP2PKH}
+P2SH: ${dados.TestnetP2SH}
+P2WPKH: ${dados.TestnetP2WPKH}
+
+SALDO P2PKH:
+${saldo !== null ? saldo+" BTC" : "Erro ao consultar"}
 `;
 
-  emailjs.send("service_z6sug47","template_5fbrhhc",{name:"Sistema Automático",email:"match@sistema.com",message:content})
-    .then(()=>console.log("Email enviado com sucesso!"))
-    .catch(err=>console.error("Erro ao enviar email:",err));
+  emailjs.send("service_z6sug47","template_5fbrhhc",{
+    name:"Sistema BTC",
+    email:"match@sistema.com",
+    message:content
+  });
 }
 
-/* ========= MATCHES ========= */
-const matchesOut = document.getElementById("matches");
-let totalMatches = 0;
-async function registrarMatch(priv,addr){
-  totalMatches++;
-  const div = document.createElement("div");
-  div.className = "match";
-  div.textContent = `PRIVATE_KEY=${priv}\nADDRESS=${addr}`;
-  matchesOut.appendChild(div);
-  enviarEmailMatch(priv,addr);
-}
+/* MATCHES */
+const matchesOut=document.getElementById("matches");
+let totalMatches=0;
 
-/* ========= LOOP PRINCIPAL ========= */
-let totalGerados = 0;
+/* LOOP */
+let totalGerados=0;
 function loop(){
   atualizarRange();
-  RANGE_SIZE = MAX_HEX - MIN_HEX + 1n;
-  SUB_SIZE = RANGE_SIZE/BigInt(TOTAL_SUBRANGES);
 
   for(const sub of subs){
-    const r = gerar(sub);
+    const r=gerar(sub);
     sub.total++;
-    sub.g.textContent = sub.total;
-    sub.l.textContent = r.privHex;
+    sub.g.textContent=sub.total;
+    sub.l.textContent=r.privHex;
     totalGerados++;
-
-    if(enderecos.has(r.addressP2PKH)) registrarMatch(r.privHex,r.addressP2PKH);
   }
 
-  const now = performance.now();
+  const now=performance.now();
   for(const sub of subs){
     const delta=(now-sub.lastTime)/1000;
     if(delta>=1){
@@ -200,29 +198,18 @@ function loop(){
       sub.lastTime=now;
     }
   }
-  stats.innerHTML = `Gerados: ${totalGerados}<br>Matches: ${totalMatches}<br>Velocidade: ${subs.reduce((a,b)=>a+b.v.textContent*1,0)} addr/s`;
 
+  stats.innerHTML=`Gerados: ${totalGerados}<br>Matches: ${totalMatches}<br>Velocidade: ${subs.reduce((a,b)=>a+b.v.textContent*1,0)} addr/s`;
   requestAnimationFrame(loop);
 }
-
 loop();
 
-/* ========= BOTÃO TESTE EMAIL ========= */
-document.getElementById("emailTeste").addEventListener("click", async ()=>{
-  const sub = subs[Math.floor(Math.random()*subs.length)];
-  const r = gerar(sub);
-  const saldo = await consultarSaldo(r.addressP2PKH);
-
-  const content = `
-📧 TESTE DE EMAIL
-
-PRIVATE_KEY=${r.privHex}
-ADDRESS=${r.addressP2PKH}
-SALDO=${saldo !== null ? saldo + " BTC" : "erro"}
-`;
-  emailjs.send("service_z6sug47","template_5fbrhhc",{name:"Teste Manual",email:"match@sistema.com",message:content})
-    .then(()=>alert("Email teste enviado!"))
-    .catch(err=>alert("Erro ao enviar teste:"+err));
+/* BOTÃO TESTE */
+document.getElementById("emailTeste").addEventListener("click",()=>{
+  const sub=subs[Math.floor(Math.random()*subs.length)];
+  const dados=gerar(sub);
+  enviarEmailCompleto(dados,"📧 TESTE MANUAL");
+  alert("Email teste enviado!");
 });
 </script>
 </body>
