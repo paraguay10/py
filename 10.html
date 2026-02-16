@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>BTC Sub-Ranges com Download</title>
+
+<style>
+body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
+h2 { color:#38bdf8; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+.card { border:1px solid #1e293b; padding:10px; border-radius:6px; background:#020617; font-size:13px; }
+.match { color:red; font-weight:bold; white-space:pre-wrap; margin-top:6px; }
+#matches { margin-top:20px; white-space:pre-wrap; border:1px solid #1e293b; padding:10px; border-radius:6px; background:#0a0f1c; }
+input[type=file]{ margin-bottom:10px; }
+</style>
+</head>
+<body>
+
+<h2>Bitcoin Search — Sub-Ranges Funcional com Download</h2>
+
+<input type="file" id="fileInput" accept=".txt">
+<p>Endereços carregados: <b id="addrCount">1</b></p>
+
+<div class="grid" id="grid"></div>
+
+<p>Iniciado em: <span id="startTime"></span></p>
+
+<h3>Matches encontrados:</h3>
+<div id="matches"></div>
+
+<button id="downloadBtn">Baixar Matches</button>
+
+<script type="module">
+import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
+import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
+import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
+
+/* ================= CONFIGURAÇÃO ================= */
+
+const ENDERECO_MATCH_FIXO = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU";
+let ENDERECOS_LISTA = new Set([ENDERECO_MATCH_FIXO]);
+
+const RANGE_MIN = BigInt("0x400000000000000000");
+const RANGE_MAX = BigInt("0x7fffffffffffffffff");
+const TOTAL_SUBRANGES = 10;
+
+/* ================================================= */
+
+document.getElementById("startTime").textContent = new Date().toLocaleString();
+
+/* ================= UPLOAD DO ARQUIVO ================= */
+
+const fileInput = document.getElementById("fileInput");
+const addrCount = document.getElementById("addrCount");
+
+fileInput.addEventListener("change", () => {
+  if (!fileInput.files.length) return;
+
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+
+  reader.onload = e => {
+    const linhas = e.target.result
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l.length > 25);
+
+    ENDERECOS_LISTA.clear();
+    ENDERECOS_LISTA.add(ENDERECO_MATCH_FIXO);
+
+    for (const addr of linhas) {
+      ENDERECOS_LISTA.add(addr);
+    }
+
+    addrCount.textContent = ENDERECOS_LISTA.size;
+
+    console.log("📂 Arquivo carregado:", file.name);
+    console.log("📌 Total de endereços:", ENDERECOS_LISTA.size);
+  };
+
+  reader.readAsText(file);
+  fileInput.value = "";
+});
+
+/* ================= BASE58 ================= */
+
+const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(buf){
+  let zeros = 0;
+  while(zeros < buf.length && buf[zeros] === 0) zeros++;
+
+  let num = BigInt("0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join(""));
+  let out = "";
+
+  while(num > 0n){
+    out = ALPHABET[num % 58n] + out;
+    num /= 58n;
+  }
+  return "1".repeat(zeros) + out;
+}
+
+/* ================= RANDOM BIGINT ================= */
+
+function randomBigInt(min, max){
+  const range = max - min;
+  const bytes = Math.ceil(range.toString(2).length / 8);
+  let rnd;
+
+  do {
+    const buf = crypto.getRandomValues(new Uint8Array(bytes));
+    rnd = BigInt("0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join(""));
+  } while(rnd > range);
+
+  return min + rnd;
+}
+
+/* ================= SUB-RANGES ================= */
+
+const RANGE_SIZE = RANGE_MAX - RANGE_MIN + 1n;
+const SUB_SIZE = RANGE_SIZE / BigInt(TOTAL_SUBRANGES);
+
+const subs = [];
+const grid = document.getElementById("grid");
+
+for(let i = 0; i < TOTAL_SUBRANGES; i++){
+  const min = RANGE_MIN + SUB_SIZE * BigInt(i);
+  const max = (i === TOTAL_SUBRANGES - 1) ? RANGE_MAX : min + SUB_SIZE - 1n;
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+<b>Sub-range ${i+1}/${TOTAL_SUBRANGES}</b><br>
+HEX:<br>${min.toString(16)}<br>→<br>${max.toString(16)}<br><br>
+Gerados: <span class="g">0</span><br>
+Velocidade: <span class="v">0</span> addr/s<br>
+Última chave:<br>
+<small class="l">---</small>
+`;
+
+  grid.appendChild(card);
+
+  subs.push({
+    min, max,
+    total: 0,
+    lastTime: performance.now(),
+    lastTotal: 0,
+    g: card.querySelector(".g"),
+    v: card.querySelector(".v"),
+    l: card.querySelector(".l"),
+    card
+  });
+}
+
+/* ================= GERAR ENDEREÇO ================= */
+
+function gerarEndereco(sub){
+  const privBig = randomBigInt(sub.min, sub.max);
+  const privHex = privBig.toString(16).padStart(64, "0");
+  const priv = Uint8Array.from(privHex.match(/.{2}/g).map(b => parseInt(b,16)));
+
+  const pub = getPublicKey(priv, true);
+  const hash160 = ripemd160(sha256(pub));
+  const payload = new Uint8Array([0x00, ...hash160]);
+  const checksum = sha256(sha256(payload)).slice(0,4);
+  const address = base58(new Uint8Array([...payload, ...checksum]));
+
+  return { privHex, address };
+}
+
+/* ================= MATCHES ================= */
+
+let allMatches = [];
+const matchesDiv = document.getElementById("matches");
+
+function salvarMatch(privHex, address){
+  const content = `🚨 MATCH ENCONTRADO
+PrivKey: ${privHex}
+Endereco: ${address}
+HEX: ${privHex}
+
+`;
+  allMatches.push(content);
+  matchesDiv.textContent += content;
+}
+
+/* ================= DOWNLOAD ================= */
+
+document.getElementById("downloadBtn").onclick = () => {
+  if (!allMatches.length) {
+    alert("Nenhum match encontrado ainda.");
+    return;
+  }
+  const blob = new Blob([allMatches.join("")], { type: "text/plain" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "sorte.txt";
+  link.click();
+};
+
+/* ================= LOOP PRINCIPAL ================= */
+
+let lastCheckin = Date.now();
+
+function loop(){
+  const now = performance.now();
+
+  for(const sub of subs){
+    const r = gerarEndereco(sub);
+
+    sub.total++;
+    sub.g.textContent = sub.total;
+    sub.l.textContent = r.privHex + "\n" + r.address;
+
+    const delta = (now - sub.lastTime) / 1000;
+    if(delta >= 1){
+      const speed = Math.floor((sub.total - sub.lastTotal) / delta);
+      sub.v.textContent = speed;
+      sub.lastTime = now;
+      sub.lastTotal = sub.total;
+    }
+
+    if (ENDERECOS_LISTA.has(r.address)) {
+      const d = document.createElement("div");
+      d.className = "match";
+      d.textContent = `🚨 MATCH\n${r.privHex}\n${r.address}`;
+      sub.card.appendChild(d);
+      salvarMatch(r.privHex, r.address);
+    }
+
+    if (Date.now() - lastCheckin > 3 * 60 * 60 * 1000) {
+      console.log("Script rodando normalmente", new Date().toLocaleString());
+      lastCheckin = Date.now();
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+loop();
+
+</script>
+</body>
+</html>
