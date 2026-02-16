@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>BTC Range 70–71 bits</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #020617;
+  color: #e5e7eb;
+  padding: 20px;
+}
+h2 { color: #38bdf8; }
+
+pre {
+  background: #020617;
+  border: 1px solid #1e293b;
+  padding: 16px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+}
+
+button {
+  background: #020617;
+  border: 1px solid #1e293b;
+  color: #e5e7eb;
+  padding: 8px;
+  width: 100%;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.stats, #fixo {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+}
+
+.match {
+  color: red;
+  border-bottom: 1px solid #1e293b;
+  margin-bottom: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Bitcoin Key Search — 70–71 bits</h2>
+
+<button id="toggle">⏸ Pausar</button>
+
+<div id="fixo">
+🔴 ENDEREÇO ALVO<br>
+Endereço: <span id="fixoAddr"></span><br>
+Saldo: <span id="fixoSaldo">carregando…</span>
+</div>
+
+<div class="stats" id="stats">
+Gerados: 0<br>
+Matches: 0<br>
+Velocidade: 0 addr/s
+</div>
+
+<pre id="out">Iniciando…</pre>
+<div id="matches">🎯 MATCHES:</div>
+
+<script type="module">
+import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
+import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
+import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
+
+/* ========= CONFIGURAÇÃO ========= */
+
+// RANGE 70–71 bits (HEX)
+const RANGE_MIN = BigInt("0x400000000000000000"); // 2^70
+const RANGE_MAX = BigInt("0x7fffffffffffffffff"); // 2^71 - 1
+
+// ENDEREÇO ALVO
+const ENDERECO_MATCH = "1PWo3JeB9jrGwfHDNpdGK54CRas7fsVzXU";
+fixoAddr.textContent = ENDERECO_MATCH;
+
+/* ========= BASE58 ========= */
+const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(buf) {
+  let zeros = 0;
+  while (zeros < buf.length && buf[zeros] === 0) zeros++;
+  let num = BigInt("0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join(""));
+  let out = "";
+  while (num > 0n) {
+    out = ALPHABET[num % 58n] + out;
+    num /= 58n;
+  }
+  return "1".repeat(zeros) + out;
+}
+
+/* ========= RANDOM BIGINT NO RANGE ========= */
+function randomBigInt(min, max) {
+  const range = max - min;
+  const bytes = Math.ceil(range.toString(2).length / 8);
+  let rnd;
+  do {
+    const buf = crypto.getRandomValues(new Uint8Array(bytes));
+    rnd = BigInt("0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join(""));
+  } while (rnd > range);
+  return min + rnd;
+}
+
+/* ========= GERAR PRIVATE KEY ========= */
+function gerar() {
+  const privBig = randomBigInt(RANGE_MIN, RANGE_MAX);
+
+  // completa para 32 bytes (64 hex)
+  const privHex = privBig.toString(16).padStart(64, "0");
+
+  const priv = Uint8Array.from(
+    privHex.match(/.{2}/g).map(b => parseInt(b, 16))
+  );
+
+  const pub = getPublicKey(priv, true);
+  const hash160 = ripemd160(sha256(pub));
+
+  const payload = new Uint8Array([0x00, ...hash160]);
+  const checksum = sha256(sha256(payload)).slice(0, 4);
+  const address = base58(new Uint8Array([...payload, ...checksum]));
+
+  return { privHex, address };
+}
+
+/* ========= SALDO ========= */
+async function consultarSaldo(addr) {
+  try {
+    const r = await fetch(`https://blockstream.info/api/address/${addr}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    return (d.chain_stats.funded_txo_sum + d.mempool_stats.funded_txo_sum)
+         - (d.chain_stats.spent_txo_sum + d.mempool_stats.spent_txo_sum);
+  } catch {
+    return null;
+  }
+}
+
+/* ========= SALDO FIXO ========= */
+async function atualizarSaldo() {
+  const sat = await consultarSaldo(ENDERECO_MATCH);
+  fixoSaldo.textContent =
+    sat === null ? "erro" : (sat / 1e8).toFixed(8) + " BTC";
+}
+atualizarSaldo();
+setInterval(atualizarSaldo, 900000);
+
+/* ========= MATCH ========= */
+let totalMatches = 0;
+async function registrarMatch(priv, addr) {
+  totalMatches++;
+  const sat = await consultarSaldo(addr);
+  const btc = sat === null ? "erro" : (sat / 1e8).toFixed(8);
+
+  const d = document.createElement("div");
+  d.className = "match";
+  d.textContent =
+`🚨 MATCH ENCONTRADO
+PRIVATE_KEY = ${priv}
+ADDRESS     = ${addr}
+SALDO       = ${btc} BTC
+`;
+  matches.prepend(d);
+}
+
+/* ========= CONTROLE ========= */
+let running = true;
+toggle.onclick = () => {
+  running = !running;
+  toggle.textContent = running ? "⏸ Pausar" : "▶ Continuar";
+};
+
+/* ========= LOOP ========= */
+let totalGerados = 0;
+let lastTime = performance.now();
+let lastCount = 0;
+
+function loop() {
+  if (running) {
+    const g = gerar();
+    totalGerados++;
+
+    if (g.address === ENDERECO_MATCH) {
+      registrarMatch(g.privHex, g.address);
+    }
+
+    out.textContent =
+`Private Key:
+${g.privHex}
+
+Address:
+${g.address}
+
+Range HEX:
+${RANGE_MIN.toString(16)} → ${RANGE_MAX.toString(16)}`;
+  }
+
+  const now = performance.now();
+  const speed = Math.floor(
+    (totalGerados - lastCount) / ((now - lastTime) / 1000)
+  );
+
+  stats.innerHTML = `
+Gerados: ${totalGerados}<br>
+Matches: ${totalMatches}<br>
+Velocidade: ${speed} addr/s
+`;
+
+  lastTime = now;
+  lastCount = totalGerados;
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
