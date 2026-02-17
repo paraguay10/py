@@ -2,8 +2,11 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Gerador BTC Testnet + Saldo</title>
+<title>Gerador BTC Testnet</title>
 
+<!-- Dependências corretas -->
+<script src="https://unpkg.com/tiny-secp256k1@2.2.1/dist/index.min.js"></script>
+<script src="https://unpkg.com/ecpair@2.1.0/dist/ecpair.min.js"></script>
 <script src="https://unpkg.com/bitcoinjs-lib@6.1.0/browser.js"></script>
 
 <style>
@@ -23,15 +26,13 @@ pre {
   max-height: 500px;
   overflow: auto;
 }
-.ok { color: #22c55e; }
-.zero { color: #94a3b8; }
 </style>
 </head>
 <body>
 
-<h2>BTC Testnet – Endereço + Saldo</h2>
+<h2>Gerar Endereços BTC (TESTNET)</h2>
 
-<button onclick="processar()">Gerar e Ver Saldo</button>
+<button onclick="processar()">Gerar Endereços</button>
 
 <pre id="saida"></pre>
 
@@ -39,33 +40,27 @@ pre {
 const URL_LISTA =
   "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
 
-async function obterSaldo(address) {
-  const url =
-    "https://blockstream.info/testnet/api/address/" + address;
-
-  const data = await fetch(url).then(r => r.json());
-
-  const funded = data.chain_stats.funded_txo_sum;
-  const spent  = data.chain_stats.spent_txo_sum;
-
-  return funded - spent; // satoshis
-}
+const ECPair = ECPairFactory(tinysecp);
 
 async function processar() {
   const out = document.getElementById("saida");
   out.textContent = "Carregando lista...\n";
 
   const txt = await fetch(URL_LISTA).then(r => r.text());
-  const linhas = txt.trim().split("\n");
+  const linhas = txt.split("\n");
 
   out.textContent = "";
 
-  for (let i = 0; i < linhas.length; i++) {
-    const priv = linhas[i].trim();
-    if (!priv) continue;
+  linhas.forEach((priv, i) => {
+    priv = priv.trim();
+
+    if (priv.length !== 64) {
+      out.textContent += `${i+1}) TAMANHO INVÁLIDO\n`;
+      return;
+    }
 
     try {
-      const keyPair = bitcoin.ECPair.fromPrivateKey(
+      const keyPair = ECPair.fromPrivateKey(
         Buffer.from(priv, "hex"),
         { network: bitcoin.networks.testnet }
       );
@@ -75,18 +70,13 @@ async function processar() {
         network: bitcoin.networks.testnet
       });
 
-      const saldo = await obterSaldo(address);
-
-      const btc = saldo / 100000000;
-
       out.textContent +=
-        `${i+1}) ${address} | saldo: ${btc} BTC\n`;
+        `${i+1}) ${priv} -> ${address}\n`;
 
     } catch (e) {
-      out.textContent +=
-        `${i+1}) ERRO NA KEY\n`;
+      out.textContent += `${i+1}) ERRO NA KEY\n`;
     }
-  }
+  });
 }
 </script>
 
