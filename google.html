@@ -2,13 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>BTC REAL — Lista GitHub Otimizado</title>
+<title>BTC REAL — Auto Start</title>
 
 <style>
 body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
 h2 { color:#38bdf8; }
 input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px; width:100%; margin-bottom:8px; }
-button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6px; cursor:pointer; font-weight:bold; margin-bottom:8px; }
 .stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
 .match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; white-space:pre-wrap; }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
@@ -20,13 +19,10 @@ button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6p
 </head>
 <body>
 
-<h2>BTC REAL (Mainnet) — Otimizado</h2>
+<h2>BTC REAL — Auto Start</h2>
 
 <label>🔽 Endereço para procurar</label>
-<input id="searchAddr" placeholder="Digite endereço BTC">
-
-<button id="btnProcessar">Processar Lista</button>
-<button id="emailTeste">📧 Enviar Email Teste</button>
+<input id="searchAddr" placeholder="Digite endereço BTC (opcional)">
 
 <div class="stats" id="stats">
 Gerados: 0<br>
@@ -45,7 +41,6 @@ import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 const URL_LISTA = "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
 const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-/* BASE58 */
 function base58(buf){
   let zeros=0;
   while(zeros<buf.length && buf[zeros]===0) zeros++;
@@ -55,7 +50,6 @@ function base58(buf){
   return "1".repeat(zeros)+out;
 }
 
-/* CONSULTAR SALDO REAL */
 async function consultarSaldo(address){
   try{
     const res = await fetch(`https://blockstream.info/api/address/${address}`);
@@ -67,7 +61,6 @@ async function consultarSaldo(address){
   } catch { return null; }
 }
 
-/* ENVIAR EMAIL */
 async function enviarEmail(dados, tipo="MATCH"){
   const saldo = await consultarSaldo(dados.P2PKH);
   const content = `${tipo}
@@ -88,13 +81,25 @@ SALDO P2PKH: ${saldo !== null ? saldo+" BTC" : "Erro"}`;
   });
 }
 
-/* PROCESSAR LISTA */
-const matchesOut=document.getElementById("matches");
-const grid=document.getElementById("grid");
-let totalMatches=0;
-let totalGerados=0;
+/* ELEMENTOS */
+const matchesOut = document.getElementById("matches");
+const grid = document.getElementById("grid");
+let totalMatches = 0;
+let totalGerados = 0;
+let lastTime = performance.now();
+let lastCount = 0;
 
-document.getElementById("btnProcessar").addEventListener("click", async()=>{
+function atualizarStats(){
+  const now = performance.now();
+  const delta = (now-lastTime)/1000;
+  const speed = Math.floor((totalGerados-lastCount)/delta);
+  document.getElementById("stats").innerHTML=`Gerados: ${totalGerados}<br>Matches: ${totalMatches}<br>Velocidade: ${speed} addr/s`;
+  lastTime = now;
+  lastCount = totalGerados;
+}
+
+/* PROCESSAR LISTA AUTOMATICAMENTE */
+async function processarLista(){
   matchesOut.innerHTML="";
   grid.innerHTML="";
   totalMatches=0;
@@ -102,11 +107,11 @@ document.getElementById("btnProcessar").addEventListener("click", async()=>{
 
   const txt = await fetch(URL_LISTA).then(r=>r.text());
   const linhas = txt.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-
   const searchAddr = document.getElementById("searchAddr").value.trim();
 
-  const promises = linhas.map(async (privHex, i) => {
-    if(!/^[0-9a-fA-F]{64}$/.test(privHex)) return;
+  // Processar todos em paralelo sem travar a UI
+  for(const [i, privHex] of linhas.entries()){
+    if(!/^[0-9a-fA-F]{64}$/.test(privHex)) continue;
 
     try{
       const priv = Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
@@ -116,19 +121,19 @@ document.getElementById("btnProcessar").addEventListener("click", async()=>{
       const checksum = sha256(sha256(payload)).slice(0,4);
       const P2PKH = base58(new Uint8Array([...payload,...checksum]));
       const P2SH = base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
-      const P2WPKH = P2PKH; // simplificação
+      const P2WPKH = P2PKH;
 
       totalGerados++;
 
-      // Renderiza endereço imediatamente
+      // Renderizar endereço imediatamente
       const divCard = document.createElement("div");
       divCard.className="match";
       divCard.textContent=`${i+1}) ${P2PKH} (${privHex})`;
       grid.appendChild(divCard);
 
-      const dados={privHex,P2PKH,P2SH,P2WPKH};
+      const dados = {privHex,P2PKH,P2SH,P2WPKH};
 
-      // Procura match ou saldo >0 em paralelo
+      // Verificar saldo e match em paralelo
       (async()=>{
         let isMatch=false;
         if(searchAddr && (searchAddr===P2PKH || searchAddr===P2SH || searchAddr===P2WPKH)){
@@ -151,25 +156,21 @@ document.getElementById("btnProcessar").addEventListener("click", async()=>{
           matchesOut.prepend(div);
           enviarEmail(dados,"SALDO POSITIVO");
         }
-
       })();
 
-      // Atualiza stats
-      document.getElementById("stats").innerHTML=`Gerados: ${totalGerados}<br>Matches: ${totalMatches}`;
+      atualizarStats();
 
     } catch(e){
       console.log("Erro cripto:", e);
     }
-  });
+    // Pequena pausa para não travar UI
+    if(i%50===0) await new Promise(r=>setTimeout(r,1));
+  }
+}
 
-  // Espera todos os processos iniciados (não bloqueia a UI)
-  await Promise.all(promises);
-});
+// INICIA AUTOMATICAMENTE
+window.addEventListener("load", processarLista);
 
-/* EMAIL TESTE */
-document.getElementById("emailTeste").addEventListener("click",()=>{
-  alert("Email teste enviado!");
-});
 </script>
 
 </body>
