@@ -2,109 +2,126 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>BTC MAINNET – REAL</title>
-
-<script src="https://unpkg.com/tiny-secp256k1@2.2.1/dist/index.min.js"></script>
-<script src="https://unpkg.com/ecpair@2.1.0/dist/ecpair.min.js"></script>
-<script src="https://unpkg.com/bitcoinjs-lib@6.1.0/browser.js"></script>
+<title>BTC REAL — Lista GitHub</title>
 
 <style>
 body {
-  font-family: monospace;
+  font-family: Arial, sans-serif;
   background: #020617;
   color: #e5e7eb;
   padding: 20px;
 }
-button {
-  padding: 10px;
-}
 pre {
-  background: #0f172a;
-  padding: 10px;
-  max-height: 600px;
-  overflow: auto;
+  background: #020617;
+  border: 1px solid #1e293b;
+  padding: 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+button {
+  background: #020617;
+  border: 1px solid #1e293b;
+  color: #e5e7eb;
+  padding: 8px;
+  width: 100%;
+  margin-bottom: 10px;
+  cursor: pointer;
 }
 </style>
 </head>
+
 <body>
 
-<h2>Bitcoin MAINNET (Real)</h2>
+<h2>Bitcoin REAL (MAINNET)</h2>
+<p>Private keys carregadas do GitHub</p>
 
 <button onclick="processar()">Processar Lista</button>
 
-<pre id="saida"></pre>
+<pre id="out">Aguardando…</pre>
 
-<script>
+<script type="module">
+import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
+import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
+import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
+
+/* ===== SUA LISTA NO GITHUB (RAW) ===== */
 const URL_LISTA =
   "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
 
-const ECPair = ECPairFactory(tinysecp);
-
-// APIs MAINNET (fallback)
-const APIS = [
-  addr => `https://blockstream.info/api/address/${addr}`,
-  addr => `https://api.blockcypher.com/v1/btc/main/addrs/${addr}/balance`,
-  addr => `https://sochain.com/api/v2/get_address_balance/BTC/${addr}`
-];
-
-async function obterSaldo(address) {
-  for (let api of APIS) {
-    try {
-      const r = await fetch(api(address));
-      if (!r.ok) continue;
-      const j = await r.json();
-
-      if (j.chain_stats)
-        return j.chain_stats.funded_txo_sum / 1e8;
-
-      if (j.final_balance !== undefined)
-        return j.final_balance / 1e8;
-
-      if (j.data?.confirmed_balance)
-        return j.data.confirmed_balance;
-
-    } catch (e) {
-      continue;
-    }
+/* ===== BASE58 (IGUAL AO SEU CÓDIGO) ===== */
+const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(buf) {
+  let zeros = 0;
+  while (zeros < buf.length && buf[zeros] === 0) zeros++;
+  let num = BigInt(
+    "0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join("")
+  );
+  let out = "";
+  while (num > 0n) {
+    out = ALPHABET[num % 58n] + out;
+    num /= 58n;
   }
-  return "API_FALHOU";
+  return "1".repeat(zeros) + out;
 }
 
+/* ===== SALDO REAL (BLOCKSTREAM) ===== */
+async function consultarSaldo(address) {
+  try {
+    const res = await fetch(`https://blockstream.info/api/address/${address}`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    const funded =
+      d.chain_stats.funded_txo_sum + d.mempool_stats.funded_txo_sum;
+    const spent =
+      d.chain_stats.spent_txo_sum + d.mempool_stats.spent_txo_sum;
+    return (funded - spent) / 1e8;
+  } catch {
+    return null;
+  }
+}
+
+/* ===== PROCESSAR LISTA ===== */
 async function processar() {
-  const out = document.getElementById("saida");
+  const out = document.getElementById("out");
   out.textContent = "Carregando lista...\n";
 
   const txt = await fetch(URL_LISTA).then(r => r.text());
-  const linhas = txt.split("\n");
+  const linhas = txt.split(/\r?\n/);
 
   out.textContent = "";
 
-  for (let i = 0; i < linhas.length; i++) {
-    const priv = linhas[i].trim();
-
-    if (!/^[0-9a-fA-F]{64}$/.test(priv)) {
-      out.textContent += `${i+1}) KEY INVÁLIDA\n`;
-      continue;
-    }
+  let i = 0;
+  for (const privHex of linhas) {
+    const hex = privHex.trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) continue;
 
     try {
-      const keyPair = ECPair.fromPrivateKey(
-        Buffer.from(priv, "hex"),
-        { network: bitcoin.networks.bitcoin }
+      const priv = Uint8Array.from(
+        hex.match(/.{2}/g).map(b => parseInt(b, 16))
       );
 
-      const { address } = bitcoin.payments.p2pkh({
-        pubkey: keyPair.publicKey,
-        network: bitcoin.networks.bitcoin
-      });
+      const pub = getPublicKey(priv, true);
+      const hash160 = ripemd160(sha256(pub));
 
-      const saldo = await obterSaldo(address);
+      const payload = new Uint8Array([0x00, ...hash160]); // MAINNET P2PKH
+      const checksum = sha256(sha256(payload)).slice(0,4);
+      const address = base58(
+        new Uint8Array([...payload, ...checksum])
+      );
+
+      const saldo = await consultarSaldo(address);
 
       out.textContent +=
-        `${i+1}) ${address} | saldo: ${saldo}\n`;
+`${++i})
+PRIVATE_KEY: ${hex}
+ADDRESS: ${address}
+SALDO: ${saldo !== null ? saldo.toFixed(8) : "erro"} BTC
 
-    } catch (e) {
-      out.textContent += `${i+1}) ERRO CRIPTO\n`;
+----------------------------------
+`;
+    } catch {
+      out.textContent += `${++i}) ERRO CRIPTO\n`;
     }
   }
 }
