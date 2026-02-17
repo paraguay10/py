@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Gerador BTC Testnet + Saldo</title>
+
+<script src="https://unpkg.com/bitcoinjs-lib@6.1.0/browser.js"></script>
+
+<style>
+body {
+  font-family: monospace;
+  background: #020617;
+  color: #e5e7eb;
+  padding: 20px;
+}
+button {
+  padding: 10px;
+  font-size: 14px;
+}
+pre {
+  background: #0f172a;
+  padding: 10px;
+  max-height: 500px;
+  overflow: auto;
+}
+.ok { color: #22c55e; }
+.zero { color: #94a3b8; }
+</style>
+</head>
+<body>
+
+<h2>BTC Testnet – Endereço + Saldo</h2>
+
+<button onclick="processar()">Gerar e Ver Saldo</button>
+
+<pre id="saida"></pre>
+
+<script>
+const URL_LISTA =
+  "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
+
+async function obterSaldo(address) {
+  const url =
+    "https://blockstream.info/testnet/api/address/" + address;
+
+  const data = await fetch(url).then(r => r.json());
+
+  const funded = data.chain_stats.funded_txo_sum;
+  const spent  = data.chain_stats.spent_txo_sum;
+
+  return funded - spent; // satoshis
+}
+
+async function processar() {
+  const out = document.getElementById("saida");
+  out.textContent = "Carregando lista...\n";
+
+  const txt = await fetch(URL_LISTA).then(r => r.text());
+  const linhas = txt.trim().split("\n");
+
+  out.textContent = "";
+
+  for (let i = 0; i < linhas.length; i++) {
+    const priv = linhas[i].trim();
+    if (!priv) continue;
+
+    try {
+      const keyPair = bitcoin.ECPair.fromPrivateKey(
+        Buffer.from(priv, "hex"),
+        { network: bitcoin.networks.testnet }
+      );
+
+      const { address } = bitcoin.payments.p2pkh({
+        pubkey: keyPair.publicKey,
+        network: bitcoin.networks.testnet
+      });
+
+      const saldo = await obterSaldo(address);
+
+      const btc = saldo / 100000000;
+
+      out.textContent +=
+        `${i+1}) ${address} | saldo: ${btc} BTC\n`;
+
+    } catch (e) {
+      out.textContent +=
+        `${i+1}) ERRO NA KEY\n`;
+    }
+  }
+}
+</script>
+
+</body>
+</html>
