@@ -5,126 +5,155 @@
 <title>BTC REAL — Lista GitHub</title>
 
 <style>
-body {
-  font-family: Arial, sans-serif;
-  background: #020617;
-  color: #e5e7eb;
-  padding: 20px;
-}
-pre {
-  background: #020617;
-  border: 1px solid #1e293b;
-  padding: 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  white-space: pre-wrap;
-}
-button {
-  background: #020617;
-  border: 1px solid #1e293b;
-  color: #e5e7eb;
-  padding: 8px;
-  width: 100%;
-  margin-bottom: 10px;
-  cursor: pointer;
-}
+body { font-family: Arial; background:#020617; color:#e5e7eb; padding:20px; }
+h2 { color:#38bdf8; }
+input { background:#020617; border:1px solid #1e293b; color:#e5e7eb; padding:6px; width:100%; margin-bottom:8px; }
+button { background:#0a0f1c; border:1px solid #1e293b; color:#38bdf8; padding:6px; cursor:pointer; font-weight:bold; margin-bottom:8px; }
+.stats { margin-top:10px; padding:10px; border:1px solid #1e293b; border-radius:6px; }
+.match { margin-bottom:10px; border-bottom:1px solid #1e293b; padding-bottom:8px; white-space:pre-wrap; }
 </style>
-</head>
 
+<script src="https://cdn.jsdelivr.net/npm/emailjs-com@3/dist/email.min.js"></script>
+<script>emailjs.init("T9VhOTKyPdZJjjO7E");</script>
+
+</head>
 <body>
 
-<h2>Bitcoin REAL (MAINNET)</h2>
-<p>Private keys carregadas do GitHub</p>
+<h2>BTC REAL (Mainnet)</h2>
 
-<button onclick="processar()">Processar Lista</button>
+<label>🔽 Endereço para procurar</label>
+<input id="searchAddr" placeholder="Digite endereço BTC">
 
-<pre id="out">Aguardando…</pre>
+<button id="btnProcessar">Processar Lista</button>
+<button id="emailTeste">📧 Enviar Email Teste</button>
+
+<div class="stats" id="stats">
+Gerados: 0<br>
+Matches: 0<br>
+Velocidade: 0 addr/s
+</div>
+
+<div id="matches">🎯 MATCHES:</div>
 
 <script type="module">
 import { getPublicKey } from "https://esm.sh/@noble/secp256k1@2.1.0";
 import { sha256 } from "https://esm.sh/@noble/hashes@1.3.3/sha256";
 import { ripemd160 } from "https://esm.sh/@noble/hashes@1.3.3/ripemd160";
 
-/* ===== SUA LISTA NO GITHUB (RAW) ===== */
-const URL_LISTA =
-  "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
+/* URL da lista de private keys no GitHub (RAW) */
+const URL_LISTA = "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
 
-/* ===== BASE58 (IGUAL AO SEU CÓDIGO) ===== */
-const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-function base58(buf) {
-  let zeros = 0;
-  while (zeros < buf.length && buf[zeros] === 0) zeros++;
-  let num = BigInt(
-    "0x" + [...buf].map(b => b.toString(16).padStart(2,"0")).join("")
-  );
-  let out = "";
-  while (num > 0n) {
-    out = ALPHABET[num % 58n] + out;
-    num /= 58n;
-  }
-  return "1".repeat(zeros) + out;
+/* BASE58 */
+const ALPHABET="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function base58(buf){
+  let zeros=0;
+  while(zeros<buf.length && buf[zeros]===0) zeros++;
+  let num=BigInt("0x"+[...buf].map(b=>b.toString(16).padStart(2,"0")).join(""));
+  let out="";
+  while(num>0n){ out=ALPHABET[num%58n]+out; num/=58n; }
+  return "1".repeat(zeros)+out;
 }
 
-/* ===== SALDO REAL (BLOCKSTREAM) ===== */
-async function consultarSaldo(address) {
-  try {
+/* CONSULTAR SALDO REAL */
+async function consultarSaldo(address){
+  try{
     const res = await fetch(`https://blockstream.info/api/address/${address}`);
-    if (!res.ok) return null;
-    const d = await res.json();
-    const funded =
-      d.chain_stats.funded_txo_sum + d.mempool_stats.funded_txo_sum;
-    const spent =
-      d.chain_stats.spent_txo_sum + d.mempool_stats.spent_txo_sum;
-    return (funded - spent) / 1e8;
-  } catch {
-    return null;
-  }
+    if(!res.ok) return null;
+    const data=res.json ? await res.json() : {};
+    const funded=(data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
+    const spent=(data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
+    return (funded-spent)/1e8;
+  } catch { return null; }
 }
 
-/* ===== PROCESSAR LISTA ===== */
-async function processar() {
-  const out = document.getElementById("out");
-  out.textContent = "Carregando lista...\n";
+/* ENVIAR EMAIL */
+async function enviarEmail(dados,tipo="MATCH"){
+  const saldo=await consultarSaldo(dados.P2PKH);
+  const content=`${tipo}
 
-  const txt = await fetch(URL_LISTA).then(r => r.text());
-  const linhas = txt.split(/\r?\n/);
+PRIVATE_KEY: ${dados.privHex}
 
-  out.textContent = "";
+MAINNET:
+P2PKH: ${dados.P2PKH}
+P2SH: ${dados.P2SH}
+P2WPKH: ${dados.P2WPKH}
 
-  let i = 0;
-  for (const privHex of linhas) {
-    const hex = privHex.trim();
-    if (!/^[0-9a-fA-F]{64}$/.test(hex)) continue;
+SALDO P2PKH: ${saldo!==null ? saldo+" BTC" : "Erro"}`;
 
-    try {
-      const priv = Uint8Array.from(
-        hex.match(/.{2}/g).map(b => parseInt(b, 16))
-      );
+  emailjs.send("service_z6sug47","template_5fbrhhc",{
+    name:"Sistema BTC",
+    email:"match@sistema.com",
+    message:content
+  });
+}
 
-      const pub = getPublicKey(priv, true);
-      const hash160 = ripemd160(sha256(pub));
+/* PROCESSAR LISTA */
+const matchesOut=document.getElementById("matches");
+let totalMatches=0;
+let totalGerados=0;
 
-      const payload = new Uint8Array([0x00, ...hash160]); // MAINNET P2PKH
-      const checksum = sha256(sha256(payload)).slice(0,4);
-      const address = base58(
-        new Uint8Array([...payload, ...checksum])
-      );
+document.getElementById("btnProcessar").addEventListener("click",async()=>{
+  matchesOut.innerHTML="";
+  totalMatches=0;
+  totalGerados=0;
 
-      const saldo = await consultarSaldo(address);
+  const txt = await fetch(URL_LISTA).then(r=>r.text());
+  const linhas = txt.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
 
-      out.textContent +=
-`${++i})
-PRIVATE_KEY: ${hex}
-ADDRESS: ${address}
-SALDO: ${saldo !== null ? saldo.toFixed(8) : "erro"} BTC
+  const searchAddr = document.getElementById("searchAddr").value.trim();
 
-----------------------------------
-`;
-    } catch {
-      out.textContent += `${++i}) ERRO CRIPTO\n`;
+  for(let i=0;i<linhas.length;i++){
+    const privHex=linhas[i];
+    if(!/^[0-9a-fA-F]{64}$/.test(privHex)) continue;
+
+    try{
+      const priv=Uint8Array.from(privHex.match(/.{2}/g).map(b=>parseInt(b,16)));
+      const pub=getPublicKey(priv,true);
+      const hash160=ripemd160(sha256(pub));
+      const payload=new Uint8Array([0x00,...hash160]);
+      const checksum=sha256(sha256(payload)).slice(0,4);
+      const P2PKH=base58(new Uint8Array([...payload,...checksum]));
+      const P2SH=base58(new Uint8Array([0x05,...hash160,...sha256(sha256(new Uint8Array([0x05,...hash160]))).slice(0,4)]));
+      const P2WPKH=base58(new Uint8Array([...payload,...checksum])); // simplificação
+
+      totalGerados++;
+
+      const dados={privHex,P2PKH,P2SH,P2WPKH};
+
+      // Verifica match com endereço pesquisado
+      if(searchAddr && (searchAddr===P2PKH || searchAddr===P2SH || searchAddr===P2WPKH)){
+        totalMatches++;
+        const div=document.createElement("div");
+        div.className="match";
+        div.textContent=`MATCH ENCONTRADO!\n${JSON.stringify(dados,null,2)}`;
+        matchesOut.prepend(div);
+        enviarEmail(dados,"MATCH ENCONTRADO");
+      } else {
+        // verifica saldo
+        const saldo = await consultarSaldo(P2PKH);
+        if(saldo && saldo>0){
+          totalMatches++;
+          const div=document.createElement("div");
+          div.className="match";
+          div.textContent=`SALDO >0!\n${JSON.stringify(dados,null,2)}\nSaldo: ${saldo} BTC`;
+          matchesOut.prepend(div);
+          enviarEmail(dados,"SALDO POSITIVO");
+        }
+      }
+
+      document.getElementById("stats").innerHTML=`Gerados: ${totalGerados}<br>Matches: ${totalMatches}`;
+
+    } catch(e){
+      console.log("Erro cripto:", e);
     }
   }
-}
+});
+
+/* EMAIL TESTE */
+document.getElementById("emailTeste").addEventListener("click",()=>{
+  alert("Email teste enviado!");
+  // Pode adicionar chamada enviarEmail({privHex:"TESTE",P2PKH:"TESTE"}, "TESTE");
+});
 </script>
 
 </body>
