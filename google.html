@@ -2,9 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Gerador BTC Testnet</title>
+<title>BTC Testnet – Robusto</title>
 
-<!-- Dependências corretas -->
+<!-- LIBS (ordem correta) -->
 <script src="https://unpkg.com/tiny-secp256k1@2.2.1/dist/index.min.js"></script>
 <script src="https://unpkg.com/ecpair@2.1.0/dist/ecpair.min.js"></script>
 <script src="https://unpkg.com/bitcoinjs-lib@6.1.0/browser.js"></script>
@@ -18,21 +18,20 @@ body {
 }
 button {
   padding: 10px;
-  font-size: 14px;
 }
 pre {
   background: #0f172a;
   padding: 10px;
-  max-height: 500px;
+  max-height: 600px;
   overflow: auto;
 }
 </style>
 </head>
 <body>
 
-<h2>Gerar Endereços BTC (TESTNET)</h2>
+<h2>Gerador BTC Testnet (com fallback)</h2>
 
-<button onclick="processar()">Gerar Endereços</button>
+<button onclick="processar()">Processar Lista</button>
 
 <pre id="saida"></pre>
 
@@ -41,6 +40,32 @@ const URL_LISTA =
   "https://raw.githubusercontent.com/paraguay10/py/main/lista.txt";
 
 const ECPair = ECPairFactory(tinysecp);
+
+// APIs TESTNET (fallback automático)
+const APIS = [
+  addr => `https://api.blockcypher.com/v1/btc/test3/addrs/${addr}/balance`,
+  addr => `https://blockstream.info/testnet/api/address/${addr}`,
+  addr => `https://sochain.com/api/v2/get_address_balance/BTCTEST/${addr}`
+];
+
+async function obterSaldo(address) {
+  for (let api of APIS) {
+    try {
+      const r = await fetch(api(address));
+      if (!r.ok) continue;
+      const j = await r.json();
+
+      // normalizações
+      if (j.final_balance !== undefined) return j.final_balance / 1e8;
+      if (j.chain_stats) return j.chain_stats.funded_txo_sum / 1e8;
+      if (j.data?.confirmed_balance) return j.data.confirmed_balance;
+
+    } catch (e) {
+      continue;
+    }
+  }
+  return "API_FALHOU";
+}
 
 async function processar() {
   const out = document.getElementById("saida");
@@ -51,12 +76,12 @@ async function processar() {
 
   out.textContent = "";
 
-  linhas.forEach((priv, i) => {
-    priv = priv.trim();
+  for (let i = 0; i < linhas.length; i++) {
+    const priv = linhas[i].trim();
 
-    if (priv.length !== 64) {
-      out.textContent += `${i+1}) TAMANHO INVÁLIDO\n`;
-      return;
+    if (!/^[0-9a-fA-F]{64}$/.test(priv)) {
+      out.textContent += `${i+1}) KEY INVÁLIDA\n`;
+      continue;
     }
 
     try {
@@ -70,13 +95,15 @@ async function processar() {
         network: bitcoin.networks.testnet
       });
 
+      const saldo = await obterSaldo(address);
+
       out.textContent +=
-        `${i+1}) ${priv} -> ${address}\n`;
+        `${i+1}) ${address} | saldo: ${saldo}\n`;
 
     } catch (e) {
-      out.textContent += `${i+1}) ERRO NA KEY\n`;
+      out.textContent += `${i+1}) ERRO CRIPTO\n`;
     }
-  });
+  }
 }
 </script>
 
