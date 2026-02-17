@@ -2,9 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>BTC Testnet – Robusto</title>
+<title>BTC MAINNET – REAL</title>
 
-<!-- LIBS (ordem correta) -->
 <script src="https://unpkg.com/tiny-secp256k1@2.2.1/dist/index.min.js"></script>
 <script src="https://unpkg.com/ecpair@2.1.0/dist/ecpair.min.js"></script>
 <script src="https://unpkg.com/bitcoinjs-lib@6.1.0/browser.js"></script>
@@ -29,7 +28,7 @@ pre {
 </head>
 <body>
 
-<h2>Gerador BTC Testnet (com fallback)</h2>
+<h2>Bitcoin MAINNET (Real)</h2>
 
 <button onclick="processar()">Processar Lista</button>
 
@@ -41,11 +40,11 @@ const URL_LISTA =
 
 const ECPair = ECPairFactory(tinysecp);
 
-// APIs TESTNET (fallback automático)
+// APIs MAINNET (fallback)
 const APIS = [
-  addr => `https://api.blockcypher.com/v1/btc/test3/addrs/${addr}/balance`,
-  addr => `https://blockstream.info/testnet/api/address/${addr}`,
-  addr => `https://sochain.com/api/v2/get_address_balance/BTCTEST/${addr}`
+  addr => `https://blockstream.info/api/address/${addr}`,
+  addr => `https://api.blockcypher.com/v1/btc/main/addrs/${addr}/balance`,
+  addr => `https://sochain.com/api/v2/get_address_balance/BTC/${addr}`
 ];
 
 async function obterSaldo(address) {
@@ -55,10 +54,14 @@ async function obterSaldo(address) {
       if (!r.ok) continue;
       const j = await r.json();
 
-      // normalizações
-      if (j.final_balance !== undefined) return j.final_balance / 1e8;
-      if (j.chain_stats) return j.chain_stats.funded_txo_sum / 1e8;
-      if (j.data?.confirmed_balance) return j.data.confirmed_balance;
+      if (j.chain_stats)
+        return j.chain_stats.funded_txo_sum / 1e8;
+
+      if (j.final_balance !== undefined)
+        return j.final_balance / 1e8;
+
+      if (j.data?.confirmed_balance)
+        return j.data.confirmed_balance;
 
     } catch (e) {
       continue;
@@ -87,12 +90,12 @@ async function processar() {
     try {
       const keyPair = ECPair.fromPrivateKey(
         Buffer.from(priv, "hex"),
-        { network: bitcoin.networks.testnet }
+        { network: bitcoin.networks.bitcoin }
       );
 
       const { address } = bitcoin.payments.p2pkh({
         pubkey: keyPair.publicKey,
-        network: bitcoin.networks.testnet
+        network: bitcoin.networks.bitcoin
       });
 
       const saldo = await obterSaldo(address);
